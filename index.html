@@ -1,0 +1,810 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Braves Game Dev Club</title>
+<link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&family=Share+Tech+Mono&display=swap" rel="stylesheet">
+
+<style>
+:root {
+  --bg:      #060a07;
+  --panel:   #0a1209;
+  --border:  #1a3322;
+  --text:    #c8ffda;
+  --muted:   #7abf96;
+  --accent:  #39ff88;
+  --accent2: #ffe44d;
+  --accent3: #ff6b35;
+  --glow:    rgba(57,255,136,0.18);
+  --glow2:   rgba(255,228,77,0.15);
+  --scanline: rgba(0,0,0,0.18);
+}
+
+/* ===== RESET ===== */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  font-family: "Share Tech Mono", monospace;
+  background: var(--bg);
+  color: var(--text);
+  overflow-x: hidden;
+  cursor: crosshair;
+}
+
+/* ===== CRT SCANLINE OVERLAY ===== */
+/* z-index raised to 10001 so it sits above the boot screen (10000) */
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  background: repeating-linear-gradient(
+    0deg,
+    var(--scanline) 0px,
+    var(--scanline) 1px,
+    transparent 1px,
+    transparent 3px
+  );
+  pointer-events: none;
+  z-index: 10001;
+  animation: scanroll 8s linear infinite;
+}
+
+@keyframes scanroll {
+  from { background-position: 0 0; }
+  to   { background-position: 0 120px; }
+}
+
+/* ===== CRT VIGNETTE ===== */
+/* z-index raised to 10002 so it sits above the boot screen (10000) */
+body::after {
+  content: "";
+  position: fixed;
+  inset: 0;
+  background: radial-gradient(ellipse at center,
+    transparent 55%,
+    rgba(0,0,0,0.75) 100%
+  );
+  pointer-events: none;
+  z-index: 10002;
+}
+
+/* ===== NOISE TEXTURE ===== */
+#noise {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 9997;
+  opacity: 0.04;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  background-size: 200px 200px;
+}
+
+/* ===== BOOT SCREEN ===== */
+#boot {
+  position: fixed;
+  inset: 0;
+  background: #030604;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  z-index: 10000;
+  transition: opacity 700ms ease;
+  gap: 32px;
+}
+
+#boot-logo {
+  font-family: "Press Start 2P", monospace;
+  font-size: clamp(16px, 3vw, 28px);
+  color: var(--accent);
+  text-shadow: 0 0 20px var(--accent), 0 0 60px rgba(57,255,136,0.3);
+  text-align: center;
+  line-height: 1.7;
+  animation: flicker 4s infinite;
+}
+
+@keyframes flicker {
+  0%,19%,21%,23%,25%,54%,56%,100% { opacity:1; }
+  20%,22%,24%,55% { opacity:0.4; }
+}
+
+#boot-bar-wrap {
+  width: min(500px, 80vw);
+  border: 2px solid var(--accent);
+  padding: 3px;
+  box-shadow: 0 0 16px var(--glow);
+}
+
+#boot-bar {
+  height: 10px;
+  background: var(--accent);
+  width: 0%;
+  transition: width 0.1s linear;
+  box-shadow: 0 0 10px var(--accent);
+}
+
+#boot-text {
+  font-family: "Share Tech Mono", monospace;
+  font-size: clamp(11px, 1.4vw, 13px);
+  color: var(--muted);
+  white-space: pre;
+  width: min(500px, 80vw);
+  line-height: 1.7;
+  min-height: 120px;
+}
+
+#boot-status {
+  font-family: "Press Start 2P", monospace;
+  font-size: 10px;
+  color: var(--accent2);
+  letter-spacing: 2px;
+  text-shadow: 0 0 8px var(--glow2);
+  animation: blink 1s step-end infinite;
+}
+
+@keyframes blink { 50% { opacity:0; } }
+
+#boot.fade { opacity: 0; pointer-events: none; }
+
+/* ===== WIPE ===== */
+#wipe {
+  position: fixed;
+  inset: 0;
+  background: linear-gradient(180deg, #0d2a1a 0%, #0a1f14 100%);
+  z-index: 9996;
+  transform: translateY(100%);
+  pointer-events: none;
+}
+
+#wipe.active { animation: wipe 900ms cubic-bezier(0.77,0,0.18,1) forwards; }
+
+@keyframes wipe {
+  0%   { transform: translateY(100%); }
+  45%  { transform: translateY(0%); }
+  100% { transform: translateY(-100%); }
+}
+
+/* ===== APP ===== */
+#app {
+  opacity: 0;
+  transition: opacity 600ms ease 200ms;
+  min-height: 100vh;
+}
+
+#app.visible { opacity: 1; }
+
+/* ===== TICKER ===== */
+#ticker {
+  background: var(--accent2);
+  color: #000;
+  font-family: "Press Start 2P", monospace;
+  font-size: 9px;
+  padding: 6px 0;
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+#ticker-inner {
+  display: inline-block;
+  animation: ticker 28s linear infinite;
+}
+
+@keyframes ticker {
+  from { transform: translateX(100vw); }
+  to   { transform: translateX(-100%); }
+}
+
+/* ===== HEADER ===== */
+header {
+  background: rgba(10,18,9,0.95);
+  backdrop-filter: blur(8px);
+  padding: 14px 32px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  border-bottom: 1px solid var(--border);
+  position: sticky;
+  top: 0;
+  z-index: 500;
+}
+
+header h1 {
+  font-family: "Press Start 2P", monospace;
+  font-size: clamp(9px, 1.5vw, 14px);
+  color: var(--accent);
+  text-shadow: 0 0 14px var(--glow);
+  line-height: 1.4;
+}
+
+nav { display: flex; gap: 4px; flex-wrap: wrap; }
+
+nav button {
+  background: transparent;
+  border: 1px solid transparent;
+  color: var(--muted);
+  font-family: "Share Tech Mono", monospace;
+  font-size: 13px;
+  cursor: pointer;
+  padding: 6px 12px;
+  border-radius: 4px;
+  transition: 0.2s;
+  letter-spacing: 1px;
+}
+
+nav button:hover, nav button.active-nav {
+  border: 1px solid var(--accent);
+  color: var(--accent);
+  box-shadow: 0 0 12px var(--glow), inset 0 0 8px rgba(57,255,136,0.05);
+  text-shadow: 0 0 8px var(--accent);
+}
+
+/* ===== TABS ===== */
+.tab { display: none; }
+.tab.active { display: block; }
+
+/* ===== HERO ===== */
+#hero {
+  position: relative;
+  min-height: 88vh;
+  display: flex;
+  align-items: flex-end;
+  overflow: hidden;
+  padding: 60px 48px;
+}
+
+/* Pixel grid background */
+#hero-bg {
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(ellipse 80% 60% at 70% 50%, rgba(57,255,136,0.07) 0%, transparent 70%),
+    linear-gradient(180deg, #060a07 0%, #0b1a10 60%, #060a07 100%);
+  overflow: hidden;
+}
+
+/* Big decorative pixel-art inspired shape */
+#hero-art {
+  position: absolute;
+  right: 4%;
+  top: 50%;
+  transform: translateY(-50%);
+  width: clamp(280px, 40vw, 560px);
+  opacity: 0.9;
+}
+
+.pixel-char {
+  display: grid;
+  gap: 4px;
+  animation: float 6s ease-in-out infinite;
+}
+
+@keyframes float {
+  0%,100% { transform: translateY(0); }
+  50%      { transform: translateY(-16px); }
+}
+
+/* Grid scan lines on hero art */
+#hero-art::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: repeating-linear-gradient(
+    0deg,
+    transparent,
+    transparent 6px,
+    rgba(57,255,136,0.04) 6px,
+    rgba(57,255,136,0.04) 7px
+  );
+  pointer-events: none;
+}
+
+#hero-content {
+  position: relative;
+  z-index: 2;
+  max-width: 56%;
+}
+
+.hero-eyebrow {
+  font-family: "Share Tech Mono", monospace;
+  font-size: 12px;
+  color: var(--accent2);
+  letter-spacing: 4px;
+  margin-bottom: 20px;
+  text-shadow: 0 0 10px var(--glow2);
+}
+
+#hero h2 {
+  font-family: "Press Start 2P", monospace;
+  font-size: clamp(22px, 4.5vw, 58px);
+  line-height: 1.35;
+  color: var(--text);
+  text-shadow: 0 0 40px rgba(57,255,136,0.15), 3px 3px 0 #0a2e1a;
+  margin-bottom: 28px;
+  letter-spacing: -1px;
+}
+
+#hero h2 span {
+  color: var(--accent);
+  text-shadow: 0 0 30px var(--accent), 3px 3px 0 #0a3320;
+}
+
+.hero-sub {
+  font-size: 15px;
+  color: var(--muted);
+  line-height: 1.8;
+  margin-bottom: 40px;
+  max-width: 480px;
+}
+
+.hero-btns { display: flex; gap: 16px; flex-wrap: wrap; }
+
+.btn-primary {
+  background: var(--accent);
+  color: #000;
+  font-family: "Press Start 2P", monospace;
+  font-size: 9px;
+  padding: 16px 24px;
+  border: none;
+  cursor: pointer;
+  letter-spacing: 1px;
+  text-decoration: none;
+  transition: 0.15s;
+  box-shadow: 4px 4px 0 #1a7a45;
+  display: inline-block;
+}
+
+.btn-primary:hover {
+  transform: translate(-2px,-2px);
+  box-shadow: 6px 6px 0 #1a7a45;
+  background: #5affa0;
+}
+
+.btn-secondary {
+  background: transparent;
+  color: var(--accent);
+  font-family: "Press Start 2P", monospace;
+  font-size: 9px;
+  padding: 14px 22px;
+  border: 2px solid var(--accent);
+  cursor: pointer;
+  letter-spacing: 1px;
+  text-decoration: none;
+  transition: 0.15s;
+  box-shadow: 4px 4px 0 #1a3322;
+  display: inline-block;
+}
+
+.btn-secondary:hover {
+  transform: translate(-2px,-2px);
+  box-shadow: 6px 6px 0 #1a3322;
+  background: rgba(57,255,136,0.07);
+}
+
+/* ===== PROJECTS SECTION ===== */
+#projects-section {
+  padding: 60px 48px;
+  border-top: 1px solid var(--border);
+}
+
+.section-label {
+  font-family: "Press Start 2P", monospace;
+  font-size: 10px;
+  color: var(--accent2);
+  letter-spacing: 3px;
+  margin-bottom: 8px;
+  text-shadow: 0 0 8px var(--glow2);
+}
+
+.section-title {
+  font-family: "Press Start 2P", monospace;
+  font-size: clamp(14px, 2.5vw, 22px);
+  color: var(--text);
+  margin-bottom: 40px;
+  text-shadow: 2px 2px 0 #0a2e1a;
+  line-height: 1.5;
+}
+
+.projects-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  gap: 24px;
+}
+
+.project-card {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  padding: 0;
+  overflow: hidden;
+  position: relative;
+  transition: 0.25s;
+  box-shadow: 4px 4px 0 #0a1f14;
+  cursor: pointer;
+}
+
+.project-card:hover {
+  border-color: var(--accent);
+  transform: translate(-3px,-3px);
+  box-shadow: 7px 7px 0 #0a3320, 0 0 24px var(--glow);
+}
+
+.project-thumb {
+  height: 160px;
+  background: linear-gradient(135deg, #0d2a1a, #061208);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-bottom: 1px solid var(--border);
+  position: relative;
+  overflow: hidden;
+}
+
+.project-thumb::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: repeating-linear-gradient(
+    45deg,
+    transparent,
+    transparent 10px,
+    rgba(57,255,136,0.03) 10px,
+    rgba(57,255,136,0.03) 11px
+  );
+}
+
+.thumb-icon {
+  font-family: "Press Start 2P", monospace;
+  font-size: 36px;
+  color: var(--accent);
+  text-shadow: 0 0 30px var(--accent);
+  z-index: 1;
+  animation: flicker 6s infinite;
+}
+
+.project-body { padding: 20px; }
+
+.project-id {
+  font-size: 10px;
+  color: var(--accent2);
+  letter-spacing: 2px;
+  margin-bottom: 8px;
+  font-family: "Press Start 2P", monospace;
+}
+
+.project-name {
+  font-family: "Press Start 2P", monospace;
+  font-size: 12px;
+  color: var(--text);
+  margin-bottom: 8px;
+  line-height: 1.6;
+}
+
+.project-by {
+  font-size: 12px;
+  color: var(--muted);
+  margin-bottom: 14px;
+}
+
+.project-link {
+  color: var(--accent);
+  font-size: 11px;
+  text-decoration: none;
+  letter-spacing: 1px;
+  border-bottom: 1px solid transparent;
+  transition: 0.2s;
+}
+
+.project-link:hover {
+  border-bottom-color: var(--accent);
+  text-shadow: 0 0 8px var(--accent);
+}
+
+.project-tag {
+  display: inline-block;
+  background: rgba(57,255,136,0.1);
+  border: 1px solid var(--border);
+  color: var(--accent);
+  font-size: 9px;
+  font-family: "Press Start 2P", monospace;
+  padding: 3px 7px;
+  margin-top: 12px;
+  letter-spacing: 1px;
+}
+
+/* ===== INNER TAB CONTENT ===== */
+.inner-tab {
+  padding: 60px 48px;
+  min-height: 70vh;
+}
+
+.code-box {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  padding: 28px;
+  border-radius: 0;
+  box-shadow: 4px 4px 0 #0a1f14, 0 0 24px var(--glow);
+  color: var(--muted);
+  line-height: 2;
+  font-size: 14px;
+  max-width: 700px;
+  position: relative;
+}
+
+.code-box::before {
+  content: "● ● ●";
+  position: absolute;
+  top: 10px;
+  left: 16px;
+  color: var(--border);
+  font-size: 10px;
+  letter-spacing: 4px;
+}
+
+.code-box .label {
+  color: var(--accent);
+  font-family: "Press Start 2P", monospace;
+  font-size: 10px;
+}
+
+.tbc-message {
+  font-family: "Press Start 2P", monospace;
+  font-size: 13px;
+  color: var(--accent);
+  text-shadow: 0 0 12px var(--glow);
+  animation: blink 1.2s step-end infinite;
+}
+
+/* ===== FOOTER ===== */
+footer {
+  border-top: 1px solid var(--border);
+  padding: 24px 48px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 11px;
+  color: var(--muted);
+}
+
+footer span { opacity: 0.5; }
+
+/* ===== PIXEL SPRITE SVG ===== */
+</style>
+</head>
+<body>
+
+<div id="noise"></div>
+
+<!-- ===== BOOT ===== -->
+<div id="boot">
+  <div id="boot-logo">BRAVES<br>GAME DEV</div>
+  <div id="boot-text"></div>
+  <div id="boot-bar-wrap"><div id="boot-bar"></div></div>
+  <div id="boot-status">PRESS START</div>
+</div>
+
+<div id="wipe"></div>
+
+<!-- ===== APP ===== -->
+<div id="app">
+
+  <!-- Ticker -->
+  <div id="ticker">
+    <span id="ticker-inner">
+      &nbsp;&nbsp;&nbsp;★ BRAVES GAME DEV CLUB &nbsp;·&nbsp; BUILD · LEARN · MAKE GAMES &nbsp;·&nbsp; 3 ACTIVE PROJECTS &nbsp;·&nbsp; JOIN US &nbsp;·&nbsp; ★ BRAVES GAME DEV CLUB &nbsp;·&nbsp; BUILD · LEARN · SHIP &nbsp;·&nbsp; NEW PROJECT COMING SOON &nbsp;·&nbsp; ★ &nbsp;·&nbsp; BRAVES GAME DEV CLUB &nbsp;·&nbsp;
+    </span>
+  </div>
+
+  <header>
+    <h1>BRAVES<br>GAME DEV CLUB</h1>
+    <nav>
+      <button class="active-nav" onclick="showTab('home', this)">home()</button>
+      <button onclick="showTab('members', this)">members()</button>
+      <button onclick="showTab('events', this)">events()</button>
+      <button onclick="showTab('assets', this)">assets()</button>
+    </nav>
+  </header>
+
+  <!-- HOME TAB -->
+  <div id="home" class="tab active">
+
+    <!-- HERO -->
+    <section id="hero">
+      <div id="hero-bg">
+        <!-- Pixel grid dots -->
+        <svg style="position:absolute;inset:0;width:100%;height:100%;opacity:0.07" xmlns="http://www.w3.org/2000/svg">
+          <defs>
+            <pattern id="dots" x="0" y="0" width="24" height="24" patternUnits="userSpaceOnUse">
+              <circle cx="1" cy="1" r="1" fill="#39ff88"/>
+            </pattern>
+          </defs>
+          <rect width="100%" height="100%" fill="url(#dots)"/>
+        </svg>
+      </div>
+
+      <!-- Cicada mascot -->
+      <div id="hero-art" aria-hidden="true" style="display:flex;align-items:center;justify-content:center;">
+        <img id="cicada-sprite" src="cicada.png" alt="Sleepy Cicada mascot"
+          style="
+            width: clamp(180px, 28vw, 420px);
+            height: auto;
+            image-rendering: pixelated;
+            image-rendering: crisp-edges;
+            filter: drop-shadow(0 0 32px rgba(57,255,136,0.55)) drop-shadow(0 0 80px rgba(57,255,136,0.2));
+            animation: float 6s ease-in-out infinite;
+          "
+        />
+      </div>
+
+      <div id="hero-content">
+        <div class="hero-eyebrow">★ BRAVES GAME DEV CLUB · EST. 2024 ★</div>
+        <h2>BUILD.<br><span>LEARN.</span><br>MAKE GAMES.</h2>
+        <p class="hero-sub">
+          Make games. Break things. Ship projects.<br>
+          A club for builders, coders, and pixel-pushers.
+        </p>
+        <div class="hero-btns">
+          <a class="btn-primary" href="#" onclick="showTab('home', null); return false;">VIEW PROJECTS →</a>
+          <a class="btn-secondary" href="#" onclick="showTab('members', null); return false;">JOIN THE CLUB</a>
+        </div>
+      </div>
+    </section>
+
+    <!-- PROJECTS -->
+    <section id="projects-section">
+      <div class="section-label">// CURRENT_PROJECTS</div>
+      <div class="section-title">What we're building</div>
+
+      <div class="projects-grid">
+        <div class="project-card">
+          <div class="project-thumb">
+            <div class="thumb-icon">🎮</div>
+          </div>
+          <div class="project-body">
+            <div class="project-id">PROJECT_01</div>
+            <div class="project-name">MR_RED_IS_HUNGRY.exe</div>
+            <div class="project-by">by: SLEEPY_CICADA</div>
+            <a class="project-link" href="https://sleepy-cicada.itch.io/mr-red-is-hungryexe" target="_blank">↗ itch.io/mr-red-is-hungryexe</a>
+            <div><span class="project-tag">PUBLISHED</span></div>
+          </div>
+        </div>
+
+        <div class="project-card">
+          <div class="project-thumb">
+            <div class="thumb-icon">🎵</div>
+          </div>
+          <div class="project-body">
+            <div class="project-id">PROJECT_02</div>
+            <div class="project-name">Chordial</div>
+            <div class="project-by">by: AUF LA FORME</div>
+            <a class="project-link" href="https://auf-la-forme.itch.io/chordial" target="_blank">↗ itch.io/chordial</a>
+            <div><span class="project-tag">PUBLISHED</span></div>
+          </div>
+        </div>
+
+        <div class="project-card">
+          <div class="project-thumb" style="background:linear-gradient(135deg,#0a0f09,#061208);">
+            <div class="thumb-icon" style="opacity:0.3;animation:blink 1.4s step-end infinite;">?</div>
+          </div>
+          <div class="project-body">
+            <div class="project-id">PROJECT_03</div>
+            <div class="project-name" style="color:var(--muted)">[ COMING SOON ]</div>
+            <div class="project-by">???</div>
+            <span style="font-size:10px;color:var(--muted)">in development...</span>
+            <div><span class="project-tag" style="color:var(--accent2);border-color:#5a4a00;background:rgba(255,228,77,0.07)">IN DEV</span></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+  </div>
+
+  <!-- MEMBERS TAB -->
+  <div id="members" class="tab">
+    <div class="inner-tab">
+      <div class="section-label">// MEMBERS</div>
+      <div class="section-title">Club Roster</div>
+      <div class="code-box" style="padding-top:36px">
+        <div class="tbc-message">_ TBC</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- EVENTS TAB -->
+  <div id="events" class="tab">
+    <div class="inner-tab">
+      <div class="section-label">// EVENTS</div>
+      <div class="section-title">Upcoming & Past</div>
+      <div class="code-box" style="padding-top:36px">
+        <div class="tbc-message">_ TBC</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ASSETS TAB -->
+  <div id="assets" class="tab">
+    <div class="inner-tab">
+      <div class="section-label">// ASSETS</div>
+      <div class="section-title">Club Resources</div>
+      <div class="code-box" style="padding-top:36px">
+        <div class="tbc-message">_ TBC</div>
+      </div>
+    </div>
+  </div>
+
+  <footer>
+    <span>BRAVES GAME DEV CLUB · 2024</span>
+    <span>build · learn · games</span>
+  </footer>
+
+</div>
+
+<script>
+/* ===== TAB NAV ===== */
+function showTab(id, btn) {
+  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+  document.getElementById(id).classList.add('active');
+
+  if (btn) {
+    document.querySelectorAll('nav button').forEach(b => b.classList.remove('active-nav'));
+    btn.classList.add('active-nav');
+  }
+}
+
+/* ===== BOOT SEQUENCE ===== */
+const bootLines = [
+  { text: "BRAVES_GAMEDEV_OS v2.4.1", delay: 0 },
+  { text: "Copyright (c) 2024 Braves Dev Club", delay: 400 },
+  { text: "", delay: 200 },
+  { text: "Checking system memory......[OK]", delay: 300 },
+  { text: "Loading sprite engine.......[OK]", delay: 280 },
+  { text: "Mounting asset registry.....[OK]", delay: 260 },
+  { text: "Compiling shaders...........[OK]", delay: 300 },
+  { text: "Connecting to itch.io.......[OK]", delay: 400 },
+  { text: "", delay: 150 },
+  { text: "All systems nominal.", delay: 200 },
+  { text: "Launching interface.........", delay: 500 },
+];
+
+const bootTextEl = document.getElementById("boot-text");
+const bootBar    = document.getElementById("boot-bar");
+const totalLines = bootLines.length;
+let lineIndex = 0;
+let charIndex = 0;
+
+function typeChar() {
+  const line = bootLines[lineIndex];
+  if (charIndex < line.text.length) {
+    bootTextEl.textContent += line.text[charIndex++];
+    setTimeout(typeChar, 16);
+  } else {
+    bootTextEl.textContent += "\n";
+    lineIndex++;
+    charIndex = 0;
+    const pct = Math.round((lineIndex / totalLines) * 100);
+    bootBar.style.width = pct + "%";
+    if (lineIndex < totalLines) {
+      setTimeout(typeChar, bootLines[lineIndex]?.delay ?? 200);
+    } else {
+      setTimeout(startTransition, 600);
+    }
+  }
+}
+
+function startTransition() {
+  const boot = document.getElementById("boot");
+  const wipe = document.getElementById("wipe");
+  const app  = document.getElementById("app");
+
+  app.classList.add("visible");
+  wipe.classList.add("active");
+
+  setTimeout(() => boot.classList.add("fade"), 250);
+  wipe.addEventListener("animationend", () => {
+    boot.style.display = "none";
+  }, { once: true });
+}
+
+typeChar();
+</script>
+</body>
+</html>
